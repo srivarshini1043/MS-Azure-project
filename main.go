@@ -23,7 +23,7 @@ type Book struct {
 var DB *gorm.DB
 var err error
 
-const dsn = "sqlserver://CloudSA6652fd08:Varshini10@project-db-server-1.database.windows.net:1433?database=project-db"
+const dsn = "sqlserver://azureuser:password@1234@project-sql-server1.database.windows.net:1433?database=project-db"
 
 func GetBooks(w http.ResponseWriter, r *http.Request) {
 	if DB == nil {
