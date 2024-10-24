@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -8,6 +9,8 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/keyvault/secrets"
 	"github.com/gorilla/mux"
 	"gorm.io/driver/sqlserver"
 	"gorm.io/gorm"
@@ -23,7 +26,37 @@ type Book struct {
 var DB *gorm.DB
 var err error
 
-const dsn = "sqlserver://azureuser:Password1234@project-sql-server1.database.windows.net:1433?database=projectdb"
+func initDB() {
+	// Set up context and credentials
+	ctx := context.Background()
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		log.Fatalf("failed to get a credential: %v", err)
+	}
+
+	// Create a Key Vault client
+	client, err := secrets.NewClient("https://sqlkeyvaultdb.vault.azure.net/", cred, nil)
+	if err != nil {
+		log.Fatalf("failed to create key vault client: %v", err)
+	}
+
+	// Retrieve the secret (password)
+	secretResp, err := client.GetSecret(ctx, "sqlkeysecretdb", nil)
+	if err != nil {
+		log.Fatalf("failed to get secret: %v", err)
+	}
+
+	password := *secretResp.Value
+
+	// Construct the DSN
+	dsn := fmt.Sprintf("sqlserver://azureuser:%s@project-sql-server1.database.windows.net:1433?database=projectdb", password)
+
+	// Connect to the database
+	DB, err = gorm.Open(sqlserver.Open(dsn), &gorm.Config{})
+	if err != nil {
+		log.Fatalf("failed to connect to database: %v", err)
+	}
+}
 
 func GetBooks(w http.ResponseWriter, r *http.Request) {
 	if DB == nil {
@@ -100,7 +133,6 @@ func UpdateBook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	err = json.NewDecoder(r.Body).Decode(&book)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -136,7 +168,6 @@ func DeleteBook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
 	result = DB.Delete(&book, id)
 	if result.Error != nil {
 		http.Error(w, result.Error.Error(), http.StatusInternalServerError)
@@ -151,11 +182,7 @@ func main() {
 	flag.BoolVar(&initDB, "initDB", false, "Initialize the database")
 	flag.Parse()
 
-	DB, err = gorm.Open(sqlserver.Open(dsn), &gorm.Config{})
-	if err != nil {
-		fmt.Println(err.Error())
-		panic("Cannot connect to DB")
-	}
+	initDB() // Call to initialize the database connection
 
 	if initDB {
 		DB.AutoMigrate(&Book{})
